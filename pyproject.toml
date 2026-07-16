@@ -1,0 +1,22 @@
+[project]
+name = "minivllm"
+version = "0.0.1"
+description = "Mini vLLM for study"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "safetensors",
+    "transformers",
+    "huggingface_hub",
+]
+
+[project.optional-dependencies]
+server = ["fastapi", "uvicorn"]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["minivllm*"]
