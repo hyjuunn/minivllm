@@ -50,22 +50,39 @@ def test_prefill_logits_match(backend):
 @pytest.mark.parametrize("backend", ["naive", "sdpa"])
 def test_greedy_decode_matches_hf(backend):
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from minivllm import EngineConfig, LLMEngine, SamplingParams
+    from minivllm import EngineConfig, LLMEngine
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # tokenize
     tok = AutoTokenizer.from_pretrained(MODEL_DIR)
     ids = tok(PROMPT, return_tensors="pt").input_ids.to(device)
+    prompt_len = ids.shape[1]
 
+    # answer + reference scores
     ref_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_DIR, torch_dtype=torch.float32).to(device).eval()
+        MODEL_DIR, torch_dtype=torch.float32
+    ).to(device).eval()
     with torch.inference_mode():
-        ref_out = ref_model.generate(
-            ids, max_new_tokens=10, do_sample=False)[0, ids.shape[1]:].tolist()
+        gen = ref_model.generate(ids, max_new_tokens=10, do_sample=False)
+        ref_logits = ref_model(gen).logits[0]
+    seq = gen[0].tolist()
 
+    # build engine and prefill prompt
     engine = LLMEngine(EngineConfig(
-        model_dir=MODEL_DIR, dtype="float32", attention_backend=backend, max_len=256))
-    result = engine.generate(ids[0].tolist(),
-                             SamplingParams(temperature=0, max_new_tokens=10))
+        model_dir=MODEL_DIR, dtype="float32", attention_backend=backend, max_len=256
+    ))
+    cache = engine._new_cache()
+    with torch.inference_mode():
+        pre = engine.model(ids, start_pos=0, cache=cache)
 
-    assert result.token_ids == ref_out[: len(result.token_ids)], \
-        f"[{backend}] decode unmatched"
+        for p in range(prompt_len, prompt_len + 10):
+            if p == prompt_len:
+                mine = pre[0, -1]
+            else:
+                step = torch.tensor([[seq[p - 1]]], device=device)
+                mine = engine.model(step, start_pos=p - 1, cache=cache)[0, -1]
+            ref = ref_logits[p-1]
+            diff = (mine - ref).abs().max().item()
+            assert diff < 1e-3, f"[{backend}] step {p - prompt_len}: logit diff {diff:.2e}"
+
