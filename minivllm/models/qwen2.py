@@ -83,5 +83,9 @@ class Qwen2ForCausalLM(nn.Module):
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
 
     def forward(self, input_ids, start_pos: int, cache) -> torch.Tensor:
-        """input_ids [B, T] -> logits [B, T, vocab]"""
-        return self.lm_head(self.model(input_ids, start_pos, cache))
+        """input_ids [B, T] -> hidden states [B, T, hidden]"""
+        return self.model(input_ids, start_pos, cache)
+
+    def compute_logits(self, hidden: torch.Tensor) -> torch.Tensor:
+        """hidden [..., hidden] -> logits [..., vocab]"""
+        return self.lm_head(hidden)

@@ -79,8 +79,9 @@ class LLMEngine:
 
         # --- PREFILL (compute bound) ---
         t0 = time.time()
-        logits = self.model(input_ids, start_pos=0, cache=cache)
-        next_tok = sample(logits[0, -1], params)
+        hidden = self.model(input_ids, 0, cache)
+        logits = self.model.compute_logits(hidden[:,-1])
+        next_tok = sample(logits[0], params)
         # wait for gpu
         if self.device == "cuda":
             torch.cuda.synchronize()
@@ -99,8 +100,9 @@ class LLMEngine:
             if stream_cb:
                 stream_cb(next_tok)
             tok = torch.tensor([[next_tok]], device=self.device)
-            logits = self.model(tok, start_pos=pos, cache=cache)
-            next_tok = sample(logits[0, -1], params)
+            hidden = self.model(tok, pos, cache)
+            logits = self.model.compute_logits(hidden[:, -1])
+            next_tok = sample(logits[0], params)
             pos += 1
         if self.device == "cuda":
             torch.cuda.synchronize()

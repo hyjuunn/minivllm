@@ -39,7 +39,7 @@ def test_prefill_logits_match(backend):
         max_len=ids.shape[1] + 8))
     cache = engine._new_cache()
     with torch.inference_mode():
-        mine = engine.model(ids, start_pos=0, cache=cache)
+        mine = engine.model.compute_logits(engine.model(ids, 0, cache))
 
     diff = (ref - mine).abs().max().item()
     assert diff < 1e-3, (
@@ -78,10 +78,11 @@ def test_greedy_decode_matches_hf(backend):
 
         for p in range(prompt_len, prompt_len + 10):
             if p == prompt_len:
-                mine = pre[0, -1]
+                mine = engine.model.compute_logits(pre[0, -1])
             else:
                 step = torch.tensor([[seq[p - 1]]], device=device)
-                mine = engine.model(step, start_pos=p - 1, cache=cache)[0, -1]
+                hidden = engine.model(step, p-1, cache)
+                mine = engine.model.compute_logits(hidden[0,-1])
             ref = ref_logits[p-1]
             diff = (mine - ref).abs().max().item()
             assert diff < 1e-3, f"[{backend}] step {p - prompt_len}: logit diff {diff:.2e}"
