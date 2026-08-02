@@ -45,7 +45,7 @@ def main():
         # streaming
         result = engine.chat(
             user, params,
-            stream_cb=lambda t: print(engine.tokenizer.decode([t]), end="", flush=True)
+            stream_cb=lambda t: print(t, end="", flush=True)
             # flush prevents collecting letters in buffer
         )
 

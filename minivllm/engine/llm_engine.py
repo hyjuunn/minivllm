@@ -15,6 +15,7 @@ from minivllm.config import EngineConfig, ModelConfig
 from minivllm.kvcache.simple import SimpleKVCache
 from minivllm.loader.weights import load_model
 from minivllm.sampling.sampler import SamplingParams, sample
+from minivllm.engine.detokenizer import IncrementalDecoder
 
 
 @dataclass
@@ -89,6 +90,7 @@ class LLMEngine:
 
         # --- DECODE (memory-bound) ---
         out_ids = []
+        decoder = IncrementalDecoder(self.tokenizer) if stream_cb else None
         pos = prompt_len
         max_steps = min(params.max_new_tokens, self.cfg.max_len - prompt_len - 1)
         t0 = time.time()
@@ -98,7 +100,10 @@ class LLMEngine:
                 break
             out_ids.append(next_tok)
             if stream_cb:
-                stream_cb(next_tok)
+                piece = decoder.add(next_tok)
+                if piece:
+                    stream_cb(piece)
+
             tok = torch.tensor([[next_tok]], device=self.device)
             hidden = self.model(tok, pos, cache)
             logits = self.model.compute_logits(hidden[:, -1])
@@ -107,6 +112,11 @@ class LLMEngine:
         if self.device == "cuda":
             torch.cuda.synchronize()
         decode_time = time.time() - t0
+
+        if stream_cb:
+            piece = decoder.finalize()
+            if piece: 
+                stream_cb(piece)
 
         return GenerationResult(
             text=self.tokenizer.decode(out_ids),
