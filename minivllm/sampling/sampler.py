@@ -17,17 +17,18 @@ class SamplingParams:
     max_new_tokens: int = 512
 
 
-def sample(logits: torch.Tensor, p: SamplingParams) -> int:
-    """logits: [vocab] -> next token id"""
+def sample(logits: torch.Tensor, p: SamplingParams) -> torch.Tensor:
+    """logits: [B, vocab] -> next token ids [B] (keep on device)"""
     if p.temperature == 0:
-        return int(logits.argmax())
+        return logits.argmax(dim=-1) #[B]
     # score to probability
-    probs = F.softmax(logits.float() / p.temperature, dim=-1)
+    probs = F.softmax(logits.float() / p.temperature, dim=-1) #[B, vocab]
     # top_p filtering
     if p.top_p < 1.0:
-        sorted_probs, sorted_idx = probs.sort(descending=True)
+        sorted_probs, sorted_idx = probs.sort(descending=True) #[B, vocab]
         cumsum = sorted_probs.cumsum(dim=-1)
         sorted_probs[cumsum - sorted_probs > p.top_p] = 0.0
-        sorted_probs /= sorted_probs.sum()
-        return int(sorted_idx[torch.multinomial(sorted_probs, 1)])
-    return int(torch.multinomial(probs, 1))
+        sorted_probs /= sorted_probs.sum(dim=-1, keepdim=True)
+        idx = torch.multinomial(sorted_probs, 1)
+        return sorted_idx.gather(-1, idx).squeeze(-1)
+    return torch.multinomial(probs, 1).squeeze(-1)

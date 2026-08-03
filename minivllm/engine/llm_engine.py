@@ -82,13 +82,14 @@ class LLMEngine:
         t0 = time.time()
         hidden = self.model(input_ids, 0, cache)
         logits = self.model.compute_logits(hidden[:,-1])
-        next_tok = sample(logits[0], params)
+        # sampler now accepts logits as [B, vocab]
+        next_tok = sample(logits, params)
         # wait for gpu
         if self.device == "cuda":
             torch.cuda.synchronize()
         prefill_time = time.time() - t0
 
-        # --- DECODE (memory-bound) ---
+        # --- DECODE ---
         out_ids = []
         decoder = IncrementalDecoder(self.tokenizer) if stream_cb else None
         pos = prompt_len
@@ -96,18 +97,19 @@ class LLMEngine:
         t0 = time.time()
         # generation loop
         for _ in range(max_steps):
-            if next_tok in self.eos_ids:
+            # sync here
+            tok_id = int(next_tok)
+            if tok_id in self.eos_ids:
                 break
-            out_ids.append(next_tok)
+            out_ids.append(tok_id)
             if stream_cb:
-                piece = decoder.add(next_tok)
+                piece = decoder.add(tok_id)
                 if piece:
                     stream_cb(piece)
 
-            tok = torch.tensor([[next_tok]], device=self.device)
-            hidden = self.model(tok, pos, cache)
+            hidden = self.model(next_tok.unsqueeze(1), pos, cache)
             logits = self.model.compute_logits(hidden[:, -1])
-            next_tok = sample(logits[0], params)
+            next_tok = sample(logits, params)
             pos += 1
         if self.device == "cuda":
             torch.cuda.synchronize()

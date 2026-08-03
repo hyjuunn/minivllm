@@ -119,3 +119,13 @@ def test_streamed_text_matches_result():
 
     assert "".join(pieces) == r.text
     assert "�" not in "".join(pieces)
+
+
+def test_sampling_path_runs():
+    from minivllm import SamplingParams
+    engine = _engine("sdpa")
+    torch.manual_seed(0)
+    r = engine.generate(engine.tokenizer.encode("hello"),
+                        SamplingParams(temperature=0.8, top_p=0.9, max_new_tokens=MAX_NEW))
+    assert len(r.token_ids) > 0
+    assert all(0 <= t < engine.model_cfg.vocab_size for t in r.token_ids)
