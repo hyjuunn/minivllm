@@ -19,9 +19,9 @@ def bench(model_dir: str, backend: str, max_new: int) -> None:
 
     engine.chat("warmup", SamplingParams(temperature=0, max_new_tokens=8))
 
-    t0 = time.time()
+    t0 = time.perf_counter()
     result = engine.chat(LONG_PROMPT, params)
-    total = time.time() - t0
+    total = time.perf_counter() - t0
     print(f"  [{backend:>6}] {result.summary()} | total {total:.2f}s")
 
 

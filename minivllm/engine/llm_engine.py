@@ -79,7 +79,7 @@ class LLMEngine:
         assert prompt_len < self.cfg.max_len, "Prompt longer than max_len"
 
         # --- PREFILL (compute bound) ---
-        t0 = time.time()
+        t0 = time.perf_counter()
         hidden = self.model(input_ids, 0, cache)
         logits = self.model.compute_logits(hidden[:,-1])
         # sampler now accepts logits as [B, vocab]
@@ -87,14 +87,14 @@ class LLMEngine:
         # wait for gpu
         if self.device == "cuda":
             torch.cuda.synchronize()
-        prefill_time = time.time() - t0
+        prefill_time = time.perf_counter() - t0
 
         # --- DECODE ---
         out_ids = []
         decoder = IncrementalDecoder(self.tokenizer) if stream_cb else None
         pos = prompt_len
         max_steps = min(params.max_new_tokens, self.cfg.max_len - prompt_len - 1)
-        t0 = time.time()
+        t0 = time.perf_counter()
         # generation loop
         for _ in range(max_steps):
             # sync here
@@ -113,7 +113,7 @@ class LLMEngine:
             pos += 1
         if self.device == "cuda":
             torch.cuda.synchronize()
-        decode_time = time.time() - t0
+        decode_time = time.perf_counter() - t0
 
         if stream_cb:
             piece = decoder.finalize()
