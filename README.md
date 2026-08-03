@@ -1,6 +1,6 @@
 # minivllm
 
-A minimal vLLM-style LLM inference engine built from scratch for study - paged KV cache, a batching scheduler, pluggable attention backends, and an OpenAI-compatible server.
+A minimal vLLM-style LLM inference engine built from scratch for study - paged KV cache, a batching scheduler, pluggable attention backends, and an OpenAI-compatible server (Paged KV cache / batching: WIP).
 
 ## Quick start
 
