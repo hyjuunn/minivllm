@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from minivllm.config import ModelConfig
+from minivllm.engine.forward_batch import ForwardBatch
 from minivllm.models.layers import RMSNorm, RotaryEmbedding, SwiGLUMLP
 
 
@@ -31,13 +32,13 @@ class Qwen2Attention(nn.Module):
         self.v_proj = nn.Linear(h, cfg.n_kv_heads * d, bias=True)
         self.o_proj = nn.Linear(cfg.n_heads * d, h, bias=False)
 
-    def forward(self, x, start_pos: int, cache):
+    def forward(self, x, batch: ForwardBatch, cache):
         B, T, _ = x.shape
         q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
         k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
         v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
-        q, k = self.rope(q, k, start_pos)
-        out = self.backend.forward(q, k, v, cache, self.layer_idx, start_pos)
+        q, k = self.rope(q, k, batch.start_pos)
+        out = self.backend.forward(q, k, v, cache, self.layer_idx, batch.start_pos)
         out = out.transpose(1, 2).reshape(B, T, self.n_heads * self.head_dim)
         return self.o_proj(out)
 
@@ -50,9 +51,9 @@ class Qwen2DecoderLayer(nn.Module):
         self.post_attention_layernorm = RMSNorm(cfg.hidden_size, cfg.rms_eps)
         self.mlp = SwiGLUMLP(cfg.hidden_size, cfg.intermediate_size)
 
-    def forward(self, x, start_pos, cache):
+    def forward(self, x, batch: ForwardBatch, cache):
         # pre-norm residual structure
-        x = x + self.self_attn(self.input_layernorm(x), start_pos, cache)
+        x = x + self.self_attn(self.input_layernorm(x), batch, cache)
         x = x + self.mlp(self.post_attention_layernorm(x))
         return x
 
@@ -68,10 +69,10 @@ class Qwen2Model(nn.Module):
             Qwen2DecoderLayer(cfg, i, backend, rope) for i in range(cfg.n_layers))
         self.norm = RMSNorm(cfg.hidden_size, cfg.rms_eps)
 
-    def forward(self, input_ids, start_pos, cache):
+    def forward(self, input_ids, batch: ForwardBatch, cache):
         x = self.embed_tokens(input_ids)
         for layer in self.layers:
-            x = layer(x, start_pos, cache)
+            x = layer(x, batch, cache)
         return self.norm(x)
 
 
@@ -82,9 +83,9 @@ class Qwen2ForCausalLM(nn.Module):
         self.model = Qwen2Model(cfg, backend, max_len)
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
 
-    def forward(self, input_ids, start_pos: int, cache) -> torch.Tensor:
+    def forward(self, input_ids, batch: ForwardBatch, cache) -> torch.Tensor:
         """input_ids [B, T] -> hidden states [B, T, hidden]"""
-        return self.model(input_ids, start_pos, cache)
+        return self.model(input_ids, batch, cache)
 
     def compute_logits(self, hidden: torch.Tensor) -> torch.Tensor:
         """hidden [..., hidden] -> logits [..., vocab]"""

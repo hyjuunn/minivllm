@@ -16,6 +16,7 @@ from minivllm.kvcache.simple import SimpleKVCache
 from minivllm.loader.weights import load_model
 from minivllm.sampling.sampler import SamplingParams, sample
 from minivllm.engine.detokenizer import IncrementalDecoder
+from minivllm.engine.forward_batch import ForwardBatch
 
 
 @dataclass
@@ -80,7 +81,8 @@ class LLMEngine:
 
         # --- PREFILL (compute bound) ---
         t0 = time.perf_counter()
-        hidden = self.model(input_ids, 0, cache)
+        batch = ForwardBatch.for_prefill(prompt_len, slot=0, device=self.device)
+        hidden = self.model(input_ids, batch, cache)
         logits = self.model.compute_logits(hidden[:,-1])
         # sampler now accepts logits as [B, vocab]
         next_tok = sample(logits, params)
@@ -107,7 +109,8 @@ class LLMEngine:
                 if piece:
                     stream_cb(piece)
 
-            hidden = self.model(next_tok.unsqueeze(1), pos, cache)
+            batch = ForwardBatch.for_decode([pos], slots=[0], device=self.device)
+            hidden = self.model(next_tok.unsqueeze(1), batch, cache)
             logits = self.model.compute_logits(hidden[:, -1])
             next_tok = sample(logits, params)
             pos += 1

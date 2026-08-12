@@ -14,6 +14,8 @@ import os
 import pytest
 import torch
 
+from minivllm.engine.forward_batch import ForwardBatch
+
 MODEL_DIR = os.environ.get("MINIVLLM_TEST_MODEL")
 pytestmark = pytest.mark.skipif(
     MODEL_DIR is None, reason="MINIVLLM_TEST_MODEL=<model path> setup needed")
@@ -44,7 +46,8 @@ def _reference_loop(engine, prompt_ids, max_new_tokens):
     ids = torch.tensor([prompt_ids], device=engine.device)
     out = []
     with torch.inference_mode():
-        hidden = engine.model(ids, 0, cache)
+        batch = ForwardBatch.for_prefill(len(prompt_ids), slot=0, device=engine.device)
+        hidden = engine.model(ids, batch, cache)
         nxt = int(engine.model.compute_logits(hidden[:, -1])[0].argmax())
         pos = len(prompt_ids)
         for _ in range(max_new_tokens):
@@ -52,7 +55,8 @@ def _reference_loop(engine, prompt_ids, max_new_tokens):
                 break
             out.append(nxt)
             step = torch.tensor([[nxt]], device=engine.device)
-            hidden = engine.model(step, pos, cache)
+            batch = ForwardBatch.for_decode([pos], slots=[0], device=engine.device)
+            hidden = engine.model(step, batch, cache)
             nxt = int(engine.model.compute_logits(hidden[:, -1])[0].argmax())
             pos += 1
     return out

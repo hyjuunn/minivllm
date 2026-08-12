@@ -10,6 +10,8 @@ import os
 import pytest
 import torch
 
+from minivllm.engine.forward_batch import ForwardBatch
+
 MODEL_DIR = os.environ.get("MINIVLLM_TEST_MODEL")
 pytestmark = pytest.mark.skipif(
     MODEL_DIR is None, reason="MINIVLLM_TEST_MODEL=<model path> setup needed")
@@ -39,7 +41,8 @@ def test_prefill_logits_match(backend):
         max_len=ids.shape[1] + 8))
     cache = engine._new_cache()
     with torch.inference_mode():
-        mine = engine.model.compute_logits(engine.model(ids, 0, cache))
+        batch = ForwardBatch.for_prefill(ids.shape[1], slot=0, device=device)
+        mine = engine.model.compute_logits(engine.model(ids, batch, cache))
 
     diff = (ref - mine).abs().max().item()
     assert diff < 1e-3, (
@@ -74,14 +77,16 @@ def test_greedy_decode_matches_hf(backend):
     ))
     cache = engine._new_cache()
     with torch.inference_mode():
-        pre = engine.model(ids, start_pos=0, cache=cache)
+        pre = engine.model(
+            ids, ForwardBatch.for_prefill(prompt_len, slot=0, device=device), cache)
 
         for p in range(prompt_len, prompt_len + 10):
             if p == prompt_len:
                 mine = engine.model.compute_logits(pre[0, -1])
             else:
                 step = torch.tensor([[seq[p - 1]]], device=device)
-                hidden = engine.model(step, p-1, cache)
+                batch = ForwardBatch.for_decode([p - 1], slots=[0], device=device)
+                hidden = engine.model(step, batch, cache)
                 mine = engine.model.compute_logits(hidden[0,-1])
             ref = ref_logits[p-1]
             diff = (mine - ref).abs().max().item()
