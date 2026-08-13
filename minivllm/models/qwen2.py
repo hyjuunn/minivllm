@@ -37,7 +37,7 @@ class Qwen2Attention(nn.Module):
         q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
         k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
         v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
-        q, k = self.rope(q, k, batch.start_pos)
+        q, k = self.rope(q, k, batch.positions)
         out = self.backend.forward(q, k, v, cache, self.layer_idx, batch.start_pos)
         out = out.transpose(1, 2).reshape(B, T, self.n_heads * self.head_dim)
         return self.o_proj(out)

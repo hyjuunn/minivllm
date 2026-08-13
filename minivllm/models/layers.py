@@ -52,11 +52,16 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("cos", freqs.cos(), persistent=False)
         self.register_buffer("sin", freqs.sin(), persistent=False)
 
-    def forward(self, q, k, start_pos: int):
-        """q: [B, H, T, D], k: [B, KVH, T, D] -> (q, k) with rope applied""" 
-        T = q.shape[2]
-        cos = self.cos[start_pos:start_pos + T].to(q.dtype)[None, None] #[1,1,T,D/2]
-        sin = self.sin[start_pos:start_pos + T].to(q.dtype)[None, None]
+    def forward(self, q, k, positions: torch.Tensor):
+        """
+        q: [B, H, T, D], k: [B, KVH, T, D], positions: [B, T] -> (q, k) with rope applied
+
+        gather, not slice: a decode batch holds sequences at unrelated positions
+        (37, 512, 8, ...) which no contiguous start:stop can express
+        """
+        cos = self.cos[positions].to(q.dtype).unsqueeze(1) #[B,T,D/2] -> [B,1,T,D/2]
+        sin = self.sin[positions].to(q.dtype).unsqueeze(1)
+        # head dim stays 1 -> broadcasts over heads in _rotate
         return _rotate(q, cos, sin), _rotate(k, cos, sin)
 
 
