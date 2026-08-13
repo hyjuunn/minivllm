@@ -9,7 +9,7 @@ A minimal vLLM-style LLM inference engine built from scratch for study - paged K
 pip install -e ".[dev,server]"
 
 # Download the model (~1GB)
-huggingface-cli download Qwen/Qwen2.5-0.5B-Instruct --local-dir ./qwen2.5-0.5b
+hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir ./qwen2.5-0.5b
 
 # Chat
 python examples/chat.py --model ./qwen2.5-0.5b
