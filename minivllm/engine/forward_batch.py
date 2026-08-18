@@ -39,7 +39,13 @@ class ForwardBatch:
         pos = torch.tensor(positions, device=device).unsqueeze(1) # [B, 1]
         seq_lens = pos.squeeze(1) + 1
         L = max(positions) + 1
-        mask = torch.arange(L, device=device) < seq_lens.unsqueeze(1) # [B,L]
+
+        # equal lengths -> nothing is padded -> no mask to build
+        # a bool attn_mask costs sdpa its fast decode kernel, and B=1 is always equal
+        mask = None
+        if min(positions) != max(positions):
+            mask = torch.arange(L, device=device) < seq_lens.unsqueeze(1) # [B,L]
+            mask = mask[:, None, None, :]
 
         return cls(
             positions=pos,
@@ -47,5 +53,5 @@ class ForwardBatch:
             seq_lens=seq_lens,
             is_prefill=False,
             max_seq_len=L,
-            padding_mask=mask[:, None, None, :], 
+            padding_mask=mask,
         )
