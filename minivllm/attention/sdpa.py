@@ -24,4 +24,4 @@ class SDPAAttentionBackend(AttentionBackend):
             return F.scaled_dot_product_attention(q, k_all, v_all, is_causal=True)
 
         # decode(T=1)
-        return F.scaled_dot_product_attention(q, k_all, v_all)
+        return F.scaled_dot_product_attention(q, k_all, v_all, attn_mask=batch.padding_mask)

@@ -18,6 +18,8 @@ class ForwardBatch:
     seq_lens: torch.Tensor    # [B] context length per sequence after this step -> decode attn mask
     is_prefill: bool          # one step is all-prefill or all-decode, never mixed
     max_seq_len: int          # = max(seq_lens) but kept on cpu to prevent D2H sync
+    # [B, 1, 1, L] bool - True -> real token, None for prefill
+    padding_mask: torch.Tensor | None
 
     @classmethod
     def for_prefill(cls, prompt_len: int, slot: int, device) -> "ForwardBatch":
@@ -28,17 +30,22 @@ class ForwardBatch:
             seq_lens=torch.tensor([prompt_len], device=device),
             is_prefill=True,
             max_seq_len=prompt_len,
+            padding_mask=None,
         )
 
     @classmethod
     def for_decode(cls, positions: list[int], slots: list[int], device) -> "ForwardBatch":
         """one new token per sequence, each at its own position"""
         pos = torch.tensor(positions, device=device).unsqueeze(1) # [B, 1]
+        seq_lens = pos.squeeze(1) + 1
+        L = max(positions) + 1
+        mask = torch.arange(L, device=device) < seq_lens.unsqueeze(1) # [B,L]
 
         return cls(
             positions=pos,
             slots=torch.tensor(slots, device=device),
-            seq_lens=pos.squeeze(1) + 1,
+            seq_lens=seq_lens,
             is_prefill=False,
-            max_seq_len=max(positions) + 1,
+            max_seq_len=L,
+            padding_mask=mask[:, None, None, :], 
         )

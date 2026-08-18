@@ -34,6 +34,8 @@ class NaiveAttentionBackend(AttentionBackend):
                 torch.full((T, S), float("-inf"), device=q.device),
                 diagonal=1)
             scores = scores + mask
+        elif batch.padding_mask is not None:
+            scores = scores.masked_fill(~batch.padding_mask, float("-inf"))
         # decode(T=1)
         attn = F.softmax(scores.float(), dim=-1).to(q.dtype)
         return attn @ v_all # [B, H, T, D]
