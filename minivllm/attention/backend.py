@@ -27,6 +27,8 @@ from abc import ABC, abstractmethod
 
 import torch
 
+from minivllm.engine.forward_batch import ForwardBatch
+
 _BACKENDS: dict[str, type] = {}
 
 
@@ -53,7 +55,7 @@ class AttentionBackend(ABC):
 
     Similar to vLLM, cache writing (e.g., the `reshape_and_cache` kernel) and attention computation
     are handled within the backend domain. When migrating to a paged cache later,
-    block_table will be added.
+    block_table will be added to ForwardBatch (this signature won't change)
     """
 
     @abstractmethod
@@ -64,7 +66,7 @@ class AttentionBackend(ABC):
         v: torch.Tensor,        # [B, n_kv_heads, T, head_dim]
         cache,                  # KVCache obj
         layer_idx: int,
-        start_pos: int,
+        batch: ForwardBatch
     ) -> torch.Tensor:          # [B, n_heads, T, head_dim]
         ...
 

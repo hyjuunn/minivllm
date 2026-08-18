@@ -1,9 +1,6 @@
 """
 engine/forward_batch.py - per-step metadata handed to the model
 
-Replaces the scalar 'start_pos' that used to be threaded through
-engine -> model -> layer -> attention -> backend -> cache
-
 Should grow again later: paged KV adds 'block_table' here and no signature changes
 ~ vLLM's AttentionMetadata / ForwardContext
 """
@@ -20,10 +17,7 @@ class ForwardBatch:
     slots: torch.Tensor       # [B] kv cache row per sequence
     seq_lens: torch.Tensor    # [B] context length per sequence after this step -> decode attn mask
     is_prefill: bool          # one step is all-prefill or all-decode, never mixed
-
-    # scalar write offset into the kv cache. temporary bridge, only correct while
-    # B = 1, removed once SimpleKVCache learns to write per-slot.
-    start_pos: int
+    max_seq_len: int          # = max(seq_lens) but kept on cpu to prevent D2H sync
 
     @classmethod
     def for_prefill(cls, prompt_len: int, slot: int, device) -> "ForwardBatch":
@@ -33,17 +27,18 @@ class ForwardBatch:
             slots=torch.tensor([slot], device=device),
             seq_lens=torch.tensor([prompt_len], device=device),
             is_prefill=True,
-            start_pos=0,
+            max_seq_len=prompt_len,
         )
 
     @classmethod
     def for_decode(cls, positions: list[int], slots: list[int], device) -> "ForwardBatch":
         """one new token per sequence, each at its own position"""
         pos = torch.tensor(positions, device=device).unsqueeze(1) # [B, 1]
+
         return cls(
             positions=pos,
             slots=torch.tensor(slots, device=device),
             seq_lens=pos.squeeze(1) + 1,
             is_prefill=False,
-            start_pos=positions[0],
+            max_seq_len=max(positions) + 1,
         )
