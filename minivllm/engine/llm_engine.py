@@ -17,7 +17,7 @@ from minivllm.loader.weights import load_model
 from minivllm.sampling.sampler import SamplingParams, sample
 from minivllm.engine.detokenizer import IncrementalDecoder
 from minivllm.engine.forward_batch import ForwardBatch
-from minivllm.engine.scheduler import Scheduler
+from minivllm.engine.scheduler import Scheduler, SchedulerOutput
 from minivllm.engine.sequence import Sequence
 
 
@@ -88,6 +88,23 @@ class LLMEngine:
         seq = Sequence(prompt_token_ids, params)
         self.scheduler.add(seq)
         return seq
+
+    def _prepare_inputs(self, out: SchedulerOutput) -> tuple[torch.Tensor, ForwardBatch]:
+        # Prepare the input tensors and forward batch for the model
+        if out.is_prefill:
+            # prefill has one sequence
+            seq = out.seqs[0]
+            input_ids = torch.tensor([seq.prompt_token_ids], device=self.device)
+            batch = ForwardBatch.for_prefill(input_ids.shape[1], slot=seq.slot, device=self.device)
+        else:
+            # decode has multiple
+            seqs = out.seqs
+            input_ids = torch.tensor([[seq.last_token] for seq in seqs], device=self.device)
+            batch = ForwardBatch.for_decode(positions=[seq.total_len - 1 for seq in seqs], 
+                                            slots=[seq.slot for seq in seqs], 
+                                            device=self.device)
+        
+        return input_ids, batch
 
     @torch.inference_mode()
     def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
