@@ -50,6 +50,7 @@ class ModelConfig:
 class EngineConfig:
     model_dir: str
     max_len: int = 4096                  # KV cache max len
+    max_batch_size: int = 8              # max concurrent sequences = kv cache slots
     attention_backend: str = "auto"      # "naive" | "sdpa" | "triton" | "auto"
     kv_cache: str = "simple"             # "simple" | "paged"
     dtype: str = "auto"                  # "auto" | "float32" | "bfloat16" | "float16"

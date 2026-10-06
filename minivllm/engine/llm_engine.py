@@ -17,6 +17,7 @@ from minivllm.loader.weights import load_model
 from minivllm.sampling.sampler import SamplingParams, sample
 from minivllm.engine.detokenizer import IncrementalDecoder
 from minivllm.engine.forward_batch import ForwardBatch
+from minivllm.engine.scheduler import Scheduler
 
 
 @dataclass
@@ -64,10 +65,14 @@ class LLMEngine:
         if isinstance(im_end, int) and im_end >= 0:
             self.eos_ids.add(im_end)
 
-    def _new_cache(self) -> SimpleKVCache:
+        # scheduler and cache
+        self.scheduler = Scheduler(cfg.max_batch_size)
+        self.cache = self._new_cache(batch=cfg.max_batch_size)
+
+    def _new_cache(self, batch: int = 1) -> SimpleKVCache:
         # TODO: cfg.kv_cache == "paged"
         c = self.model_cfg
-        cache = SimpleKVCache(c.n_layers, 1, c.n_kv_heads,
+        cache = SimpleKVCache(c.n_layers, batch, c.n_kv_heads,
                               self.cfg.max_len, c.head_dim, self.dtype, self.device)
         return cache
 
