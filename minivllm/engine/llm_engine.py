@@ -18,6 +18,7 @@ from minivllm.sampling.sampler import SamplingParams, sample
 from minivllm.engine.detokenizer import IncrementalDecoder
 from minivllm.engine.forward_batch import ForwardBatch
 from minivllm.engine.scheduler import Scheduler
+from minivllm.engine.sequence import Sequence
 
 
 @dataclass
@@ -75,6 +76,18 @@ class LLMEngine:
         cache = SimpleKVCache(c.n_layers, batch, c.n_kv_heads,
                               self.cfg.max_len, c.head_dim, self.dtype, self.device)
         return cache
+
+    def add_request(self, prompt_token_ids: list, params: SamplingParams | None = None) -> Sequence:
+        """add a new request to scheduler"""
+        if params is None:
+            params = SamplingParams()
+        if len(prompt_token_ids) == 0:
+            raise ValueError("prompt_token_ids is empty")
+        if len(prompt_token_ids) >= self.cfg.max_len:
+            raise ValueError(f"prompt_token_ids is too long: {len(prompt_token_ids)} >= {self.cfg.max_len}")
+        seq = Sequence(prompt_token_ids, params)
+        self.scheduler.add(seq)
+        return seq
 
     @torch.inference_mode()
     def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
