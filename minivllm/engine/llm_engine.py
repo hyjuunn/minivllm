@@ -141,78 +141,48 @@ class LLMEngine:
                     self.scheduler.finish(seq, reason="length")
         return out.seqs
 
-    # @torch.inference_mode()
-    # def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
-    #     """core of engine: prefill 1 + decode loop"""
-    #     cache = self._new_cache()
-    #     input_ids = torch.tensor([prompt_token_ids], device=self.device)
-    #     prompt_len = input_ids.shape[1]
-    #     assert prompt_len < self.cfg.max_len, "Prompt longer than max_len"
-
-    #     # --- PREFILL (compute bound) ---
-    #     t0 = time.perf_counter()
-    #     batch = ForwardBatch.for_prefill(prompt_len, slot=0, device=self.device)
-    #     hidden = self.model(input_ids, batch, cache)
-    #     logits = self.model.compute_logits(hidden[:,-1])
-    #     # sampler now accepts logits as [B, vocab]
-    #     next_tok = sample(logits, params)
-    #     # wait for gpu
-    #     if self.device == "cuda":
-    #         torch.cuda.synchronize()
-    #     prefill_time = time.perf_counter() - t0
-
-    #     # --- DECODE ---
-    #     out_ids = []
-    #     decoder = IncrementalDecoder(self.tokenizer) if stream_cb else None
-    #     pos = prompt_len
-    #     max_steps = min(params.max_new_tokens, self.cfg.max_len - prompt_len - 1)
-    #     t0 = time.perf_counter()
-    #     # generation loop
-    #     for _ in range(max_steps):
-    #         # sync here
-    #         tok_id = int(next_tok)
-    #         if tok_id in self.eos_ids:
-    #             break
-    #         out_ids.append(tok_id)
-    #         if stream_cb:
-    #             piece = decoder.add(tok_id)
-    #             if piece:
-    #                 stream_cb(piece)
-
-    #         batch = ForwardBatch.for_decode([pos], slots=[0], device=self.device)
-    #         hidden = self.model(next_tok.unsqueeze(1), batch, cache)
-    #         logits = self.model.compute_logits(hidden[:, -1])
-    #         next_tok = sample(logits, params)
-    #         pos += 1
-    #     if self.device == "cuda":
-    #         torch.cuda.synchronize()
-    #     decode_time = time.perf_counter() - t0
-
-    #     if stream_cb:
-    #         piece = decoder.finalize()
-    #         if piece: 
-    #             stream_cb(piece)
-
-    #     return GenerationResult(
-    #         text=self.tokenizer.decode(out_ids),
-    #         token_ids=out_ids, prompt_len=prompt_len,
-    #         prefill_time=prefill_time, decode_time=decode_time)
-
     def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
         # add initial req to scheduler
         seq = self.add_request(prompt_token_ids, params)
+        # create incremental decoder only if stream_cb
+        decoder = IncrementalDecoder(self.tokenizer) if stream_cb else None
+        # count streamed tokens
+        sent = 0
+
+        def flush():
+            nonlocal sent
+            if decoder is None:
+                return
+            for tok in seq.output_token_ids[sent:]:
+                piece = decoder.add(tok)
+                if piece:
+                    stream_cb(piece)
+            sent = len(seq.output_token_ids)
+
+        t0 = time.perf_counter()
+        self.step()
+        flush()
+        prefill_time = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         while not seq.is_finished:
             self.step()
+            flush()
+        decode_time = time.perf_counter() - t0
+
+        if decoder is not None:
+            piece = decoder.finalize()
+            if piece:
+                stream_cb(piece)
+
         # return result
         return GenerationResult(
             text=self.tokenizer.decode(seq.output_token_ids),
             token_ids=seq.output_token_ids,
             prompt_len=len(seq.prompt_token_ids),
-            prefill_time=0.0,  # TODO: measure time
-            decode_time=0.0    # TODO: measure time
+            prefill_time=prefill_time,
+            decode_time=decode_time,
         )
-        
-
 
     def chat(self, user_message: str, params: SamplingParams = None,
              stream_cb=None) -> GenerationResult:
