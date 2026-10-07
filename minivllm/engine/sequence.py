@@ -1,8 +1,7 @@
 """
 engine/sequence.py
 
-will become fundamental unit managed by scheduler later
-TODO
+per-request state the scheduler and engine pass around
 """
 import enum
 from dataclasses import dataclass, field

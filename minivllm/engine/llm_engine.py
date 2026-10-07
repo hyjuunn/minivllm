@@ -1,12 +1,14 @@
 """
 engine/llm_engine.py - main engine
 
-Current structure: get one request and run prefill + decode loop (simple)
-Later: upgrade to step() based
+add_request() queues a new sequence
+step() runs one scheduler iteration: one prefill, or one batched decode
+over every running sequence
+generate() is a single-req wrapper over add_request + step
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 

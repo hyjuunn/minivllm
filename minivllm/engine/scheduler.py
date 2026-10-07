@@ -1,8 +1,11 @@
 """
 engine/scheduler.py
-TODO
+
+prefill-first: waiting seq gets a free kv cache slot and is
+prefilled alone
+otherwise, every running seq decodes together
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import deque
 
 from minivllm.engine.sequence import Sequence, SeqStatus
