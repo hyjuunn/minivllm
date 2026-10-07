@@ -103,8 +103,14 @@ class LLMEngine:
             batch = ForwardBatch.for_decode(positions=[seq.total_len - 1 for seq in seqs], 
                                             slots=[seq.slot for seq in seqs], 
                                             device=self.device)
-        
         return input_ids, batch
+
+    def _sample(self, seqs: list[Sequence], logits: torch.Tensor) -> list[int]:
+        # for every ith sequence in seqs, cut ith row of logits and sample next with its params
+        toks = []
+        for i, seq in enumerate(seqs):
+            toks.append(sample(logits[i:i+1], seq.params))
+        return torch.cat(toks).tolist()
 
     @torch.inference_mode()
     def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
