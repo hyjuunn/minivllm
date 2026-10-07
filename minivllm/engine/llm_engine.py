@@ -113,6 +113,39 @@ class LLMEngine:
         return torch.cat(toks).tolist()
 
     @torch.inference_mode()
+    def step(self) -> list[Sequence]:
+        """run one step of engine"""
+        # ask scheduler
+        out = self.scheduler.schedule()
+        # if nothing to run, return empty
+        if out is None:
+            return []
+        # prepare inputs
+        input_ids, batch = self._prepare_inputs(out)
+        hidden = self.model(input_ids, batch, self.cache)
+        logits = self.model.compute_logits(hidden[:, -1])
+        # sample tokens
+        next_toks = self._sample(out.seqs, logits)
+        
+        finished_seqs = []
+        for seq, tok in zip(out.seqs, next_toks):
+            # check for EOS
+            if tok in self.eos_ids:
+                self.scheduler.finish(seq, reason="eos")
+                finished_seqs.append(seq)
+            else:
+                seq.append_token(tok)
+                # if max_new_tokens is reached
+                if len(seq.output_token_ids) >= seq.params.max_new_tokens:
+                    self.scheduler.finish(seq, reason="max_new_tokens")
+                    finished_seqs.append(seq)
+                # if max_len is reached (slot is full)
+                elif seq.total_len >= self.cfg.max_len:
+                    self.scheduler.finish(seq, reason="max_len")
+                    finished_seqs.append(seq)
+        return finished_seqs
+
+    @torch.inference_mode()
     def generate(self, prompt_token_ids: list, params: SamplingParams, stream_cb=None) -> GenerationResult:
         """core of engine: prefill 1 + decode loop"""
         cache = self._new_cache()
