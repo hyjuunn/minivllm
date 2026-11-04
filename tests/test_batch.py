@@ -21,6 +21,12 @@ pytestmark = pytest.mark.skipif(
 # deliberately uneven, so rows get different amounts of padding
 PROMPTS = ["The quick brown fox", "Hello", "In a distant galaxy there once lived a"]
 MAX_LEN = 64
+# fewer slots than ENGINE_PROMPTS, so later requests must wait for a freed slot
+MAX_BATCH = 3
+
+# each request stops at its own length, so slots free up mid-run and get reused
+ENGINE_PROMPTS = PROMPTS + ["1, 2, 3, 4,", "Python is"]
+MAX_NEW = [5, 17, 9, 12, 3]
 
 _engines = {}
 
@@ -41,7 +47,7 @@ def _engine(backend):
     if backend not in _engines:
         _engines[backend] = LLMEngine(EngineConfig(
             model_dir=MODEL_DIR, dtype="float32",
-            attention_backend=backend, max_len=MAX_LEN))
+            attention_backend=backend, max_len=MAX_LEN, max_batch_size=MAX_BATCH))
     return _engines[backend]
 
 
@@ -100,3 +106,25 @@ def test_slot_write_does_not_touch_neighbours(backend):
 
     assert cache.k[0, 1, :, :len(ids)].abs().sum() > 0, "slot 1 was not written"
     assert torch.equal(cache.k[0, 0], torch.zeros_like(cache.k[0, 0])), "slot 0 was clobbered"
+
+
+@pytest.mark.parametrize("backend", ["naive", "sdpa"])
+def test_step_loop_matches_generate(backend):
+    """add_request + step() over more requests than slots == each one through generate()"""
+    from minivllm import SamplingParams
+    engine = _engine(backend)
+    ids = [engine.tokenizer.encode(p) for p in ENGINE_PROMPTS]
+    params = [SamplingParams(temperature=0, max_new_tokens=n) for n in MAX_NEW]
+
+    want = [engine.generate(i, p).token_ids for i, p in zip(ids, params)]
+
+    seqs = [engine.add_request(i, p) for i, p in zip(ids, params)]
+    most_running = 0
+    while engine.scheduler.has_unfinished():
+        engine.step()
+        most_running = max(most_running, len(engine.scheduler.running))
+
+    assert most_running == MAX_BATCH, f"[{backend}] never ran {MAX_BATCH} sequences at once"
+    for k, (seq, w) in enumerate(zip(seqs, want)):
+        assert seq.output_token_ids == w, f"[{backend}] request {k} ({ENGINE_PROMPTS[k]!r}) diverged"
+    assert sorted(engine.scheduler.free_slots) == list(range(MAX_BATCH)), f"[{backend}] a slot leaked"
