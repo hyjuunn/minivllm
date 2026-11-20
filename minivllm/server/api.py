@@ -41,13 +41,24 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/v1/chat/completions")
-def chat_completions(req: ChatRequest):
+async def chat_completions(req: ChatRequest):
     prompt = engine.tokenizer.apply_chat_template(
         [m.model_dump() for m in req.messages],
         add_generation_prompt=True, tokenize=False)
     ids = engine.tokenizer.encode(prompt, add_special_tokens=False)
     params = SamplingParams(temperature=req.temperature, top_p=req.top_p, max_new_tokens=req.max_tokens)
-    result = engine.generate(ids, params)
+    # result = engine.generate(ids, params)
+    outbox = engine_loop.submit(ids, params)
+    toks = []
+    while True:
+        kind, value = await outbox.get()
+        if kind == "token":
+            toks.append(value)
+        else:
+            break
+
+    text = engine.tokenizer.decode(toks)
+
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -55,13 +66,13 @@ def chat_completions(req: ChatRequest):
         "model": engine.cfg.model_dir,
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant", "content": result.text},
+            "message": {"role": "assistant", "content": text},
             "finish_reason": "stop",
         }],
         "usage": {
-            "prompt_tokens": result.prompt_len,
-            "completion_tokens": len(result.token_ids),
-            "total_tokens": result.prompt_len + len(result.token_ids),
+            "prompt_tokens": len(ids),
+            "completion_tokens": len(toks),
+            "total_tokens": len(ids) + len(toks),
         },
     }
 
