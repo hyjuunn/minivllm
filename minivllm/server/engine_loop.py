@@ -25,6 +25,26 @@ class EngineLoop:
 
     def _send(self, outbox, loop, msg):
         loop.call_soon_threadsafe(outbox.put_nowait, msg)
+
+    def _admit(self, ticket, live):
+        ids, params, outbox, loop = ticket
+        try:
+            seq = self.engine.add_request(ids, params)
+        except ValueError as e:
+            self._send(outbox, loop, e)
+            return
+        live[seq.seq_id] = [seq, outbox, loop, 0]
     
     def _run(self):
-        pass
+        # main engine thread loop
+        live = {} # seq_id -> [seq, outbox, loop, sent]
+
+        while True:
+            # check inbox
+            if self.inbox.empty():
+                request = self.inbox.get()
+            else:
+                request = self.inbox.get_nowait()
+            
+
+
