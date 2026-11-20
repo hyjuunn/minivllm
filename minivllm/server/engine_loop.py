@@ -40,11 +40,21 @@ class EngineLoop:
         live = {} # seq_id -> [seq, outbox, loop, sent]
 
         while True:
-            # check inbox
-            if self.inbox.empty():
-                request = self.inbox.get()
-            else:
-                request = self.inbox.get_nowait()
+            # if nothing to do, sleep till next ticket
+            if not self.engine.scheduler.has_unfinished():
+                ticket = self.inbox.get()
+                self._admit(ticket, live)
+
+            # register remaining tickets
+            while True:
+                try:
+                    ticket = self.inbox.get_nowait()
+                except queue.Empty:
+                    break
+                self._admit(ticket, live)
+
+            # step + distribute 
+            
             
 
 
