@@ -14,6 +14,7 @@ import time
 import uuid
 
 from minivllm import EngineConfig, LLMEngine, SamplingParams
+from minivllm.server.engine_loop import EngineLoop
 
 try:
     from fastapi import FastAPI
@@ -24,6 +25,7 @@ except ImportError as e:
 
 app = FastAPI(title="minivllm")
 engine: LLMEngine = None
+engine_loop: EngineLoop = None
 
 
 class ChatMessage(BaseModel):
@@ -65,13 +67,15 @@ def chat_completions(req: ChatRequest):
 
 
 def main():
-    global engine
+    global engine, engine_loop
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--max-len", type=int, default=4096)
     args = ap.parse_args()
     engine = LLMEngine(EngineConfig(model_dir=args.model, max_len=args.max_len))
+    engine_loop = EngineLoop(engine)
+    engine_loop.start()
     uvicorn.run(app, host="0.0.0.0", port=args.port)
 
 
