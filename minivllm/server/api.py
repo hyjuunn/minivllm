@@ -19,6 +19,7 @@ from minivllm.server.engine_loop import EngineLoop
 try:
     from fastapi import FastAPI
     from pydantic import BaseModel
+    from fastapi import HTTPException
     import uvicorn
 except ImportError as e:
     raise SystemExit("try after pip install fastapi uvicorn") from e
@@ -54,7 +55,10 @@ async def chat_completions(req: ChatRequest):
         kind, value = await outbox.get()
         if kind == "token":
             toks.append(value)
+        elif kind == "error":
+            raise HTTPException(status_code=400, detail=value)
         else:
+            # finish
             break
 
     text = engine.tokenizer.decode(toks)
@@ -67,7 +71,7 @@ async def chat_completions(req: ChatRequest):
         "choices": [{
             "index": 0,
             "message": {"role": "assistant", "content": text},
-            "finish_reason": "stop",
+            "finish_reason": value,
         }],
         "usage": {
             "prompt_tokens": len(ids),
