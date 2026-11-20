@@ -31,7 +31,7 @@ class EngineLoop:
         try:
             seq = self.engine.add_request(ids, params)
         except ValueError as e:
-            self._send(outbox, loop, e)
+            self._send(outbox, loop, ("error", str(e)))
             return
         live[seq.seq_id] = [seq, outbox, loop, 0]
     
@@ -54,7 +54,7 @@ class EngineLoop:
                 self._admit(ticket, live)
 
             # step + distribute 
-            
+
             
 
 
