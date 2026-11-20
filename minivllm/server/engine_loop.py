@@ -53,7 +53,19 @@ class EngineLoop:
                     break
                 self._admit(ticket, live)
 
-            # step + distribute 
+            # step + distribute
+            output = self.engine.step()
+            for seq in output:
+                entry = live[seq.seq_id]
+                _, outbox, loop, sent = entry
+
+                for tok in seq.output_token_ids[sent:]:
+                    self._send(outbox, loop, ("token", tok))
+                entry[3] = len(seq.output_token_ids)
+
+                if seq.is_finished:
+                    self._send(outbox, loop, ("done", seq.finish_reason))
+                    del live[seq.seq_id]
 
             
 
